@@ -21,4 +21,4 @@ This project requires the following components:
 This was a *fun* **FANTASTIC** project.
 
 Learn more about [Deep Dive Coding](https://deepdivecoding.com)!
-[ddclogo](ddc.png)
+![ddclogo](ddc.png)
