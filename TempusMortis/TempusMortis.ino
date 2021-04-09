@@ -4,25 +4,26 @@
  * Date: 08-APR-2021
  */
 
- #include <OneButton.h>
- #include <Encoder.h>
- #include <Adafruit_NeoPixel.h>
- #include <SPI.h>
- #include <Ethernet.h>
- #include <mac.h>
- #include <wemo.h>
- #include <Wire.h>
- #include <Adafruit_GFX.h>
- #include <Adafruit_SSD1306.h>
- #include <hue.h>
- #include <TimeLib.h>
- #include <math.h>
+#include <OneButton.h>
+#include <Encoder.h>
+#include <Adafruit_NeoPixel.h>
+#include <SPI.h>
+#include <Ethernet.h>
+#include <mac.h>
+#include <wemo.h>
+#include <Wire.h>
+#include <Adafruit_GFX.h>
+#include <Adafruit_SSD1306.h>
+#include <hue.h>
+#include <TimeLib.h>
+#include <DS1307RTC.h>
+#include <math.h>
  
 
- #define SCREEN_WIDTH 128
- #define SCREEN_HEIGHT 64
- #define OLED_RESET 4
- #define SCREEN_ADDRESS 0x3c
+#define SCREEN_WIDTH 128
+#define SCREEN_HEIGHT 64
+#define OLED_RESET 4
+#define SCREEN_ADDRESS 0x3c
  
 
 //Button declarations
@@ -89,8 +90,14 @@ long long pctime;
 int count = 0;
 int status = 0;
 int sex = 0;
-long long birthDate = 0;
-long long deathDate = 0;
+int birthYear = 1970;
+int birthMonth = 1;
+int birthDay = 1;
+tmElements_t bd;
+time_t birthDate;
+unsigned long deathDate = 0;
+long long remainingLife = 0;
+int value = 0;
 const long long maleLifespan = 2368353600; //75.1 years in seconds
 const long long femaleLifespan = 2538648000; //80.5 years in seconds
 const long long averageLifespan = 2453500800; //77.8 years in seconds
@@ -98,6 +105,7 @@ const long long averageLifespan = 2453500800; //77.8 years in seconds
 void setup() {
   //set up serial monitor
   Serial.begin(9600);
+  Serial.println("Beginning self-test");
   
   //set up buttons
   redButton.attachClick(redClick);
@@ -127,7 +135,7 @@ void setup() {
     pixel.clear();
     pixel.show();
     
-  //set up display
+
   //setup I2C
   Wire.begin();
   for (int i = 0; i <= 127; i++)
@@ -193,7 +201,25 @@ void setup() {
   } else {
     Serial.println("RTC has set the system time");
   }
- 
+  if (Serial.available()) {
+    time_t t = processSyncMessage();
+    if (t != 0) {
+      Teensy3Clock.set(t); // set the RTC
+      setTime(t);
+    }
+  }
+  display.clearDisplay();
+  display.setTextSize(1);             // Normal 1:1 pixel scale
+  display.setTextColor(SSD1306_WHITE);        // Draw white text
+  display.setCursor(0,0); 
+  display.printf("%i\n", getTeensy3Time());
+  display.display();
+  delay(500);
+  display.clearDisplay();
+  display.printf("TEMPUS\nMORTIS");
+  display.display();
+  Serial.print("\nWelcome to Tempus Mortis.\nStarting in 5 seconds.\n");
+  delay(5000);
 }
 
 void loop() {
@@ -202,11 +228,32 @@ void loop() {
   encoderButton.tick();
   
   // Check mode
-  //0: Get DOB
-  //1: Get Sex
+  //0: Get Sex
+  //1: Get Birthdate
   //2: Automatic operation
   //3: Manual operation
   //4: Existential panic
+
+  switch(mode){
+    case 0:
+      getSex();
+      break;
+    case 1:
+      getDOB();
+      break;
+    case 2:
+      autoHorror();
+      break;
+    case 3:
+      manualMode();
+      break;
+    case 4:
+      panic();
+      break;
+    default:
+      mode = 0;
+      break;
+  }
 
 }
 
@@ -216,6 +263,56 @@ void getDOB(){
   //0: Get year
   //1: Get month
   //2: Get year  
+
+  display.clearDisplay();
+  display.setTextSize(1);             // Normal 1:1 pixel scale
+  display.setTextColor(SSD1306_WHITE);        // Draw white text
+  display.setCursor(0,0); 
+  display.printf("Please enter your\nbirth date.\n");
+
+  switch(steps){
+    case 0:
+      //year
+      value = encoder.read();
+      value = value / 10;
+      birthYear = value;
+      display.printf("Year: %i \n", birthYear + 1970);
+      
+      break;
+    case 1:
+      pos = encoder.read();
+      if(pos < 10){
+        encoder.write(10);
+      }
+      else if(pos > 129){
+        encoder.write(129);
+      }
+      value = pos / 10;
+      birthMonth =  value;
+      display.printf("Month: %i \n", birthMonth);
+      break;
+    case 2: 
+      pos = encoder.read();
+      if(pos < 10){
+        encoder.write(10);
+      }
+      else if(pos > 318){
+        encoder.write(318);
+      }
+      value = pos / 10;
+      birthDay =  value;
+      display.printf("Day: %i \n", birthDay);
+      break;
+    default:
+      //SCREAM!
+      Serial.println("WTF!?!?!? YOU SHOULD NOT EVER BE HERE!");
+      steps = 0;
+      mode =0;
+  }
+    display.display();
+  //set birthdate as long long
+  //add lifespan to birthdate to calculate deathdate
+  
 }
 
 void getSex(){
@@ -223,15 +320,57 @@ void getSex(){
   //1: Female
   //2: Complex
 
+  display.clearDisplay();
+  display.setTextSize(1);             // Normal 1:1 pixel scale
+  display.setTextColor(SSD1306_WHITE);        // Draw white text
+  display.setCursor(0,0); 
+  display.printf("Please enter your\ngender.\n");
+  pos = encoder.read();
+  
+  //Keep encoder in range
+  if(pos < 0){
+    pos = 0;
+    encoder.write(pos);
+  }
+  else if(pos > 30){
+    pos = 30;
+    encoder.write(pos);
+  }
+
+  if(pos <= 10){
+    sex = 0;
+    display.printf("\n>   Male +\n");
+  }
+  else if(pos <=20){
+    sex = 1;
+    
+    display.printf("\n> - Female +\n");
+  }
+  else{
+    sex = 2;
+    
+    display.printf("\n> - It's complicated\n");
+  }
+  
+  display.display();
   
 }
 
 void autoHorror(){
+  remainingLife = deathDate - getTeensy3Time();
+  display.clearDisplay();
+  display.setCursor(0,0); 
+  display.printf("%i", remainingLife);
+  display.display();
   //blink neopixel
-  
+  deathBlink();
   //beep
   
   //show hue
+}
+
+void deathBlink(){
+  
 }
 
 void manualMode(){
@@ -241,18 +380,69 @@ void manualMode(){
 
 void panic(){
   //start the tea
+  //calming lights
 }
 
 void redClick(){
   Serial.println("CLICKED RED!");
+  if(mode == 2){
+    mode = 3;
+  }
+  else if(mode == 3){
+    mode = 2;
+  }
 }
 
 void blueClick(){
   Serial.println("CLICKED BLUE!");
+  if(mode == 2){
+    mode = 4;
+  }
+  else if(mode == 3){
+    mode = 4;
+  }
+  else if(mode == 4){
+    mode = 2;
+  }
 }
 
 void encoderClick(){
   Serial.println("CLICKED ENCODER!");
+  if(mode == 0){
+    mode = 1;
+    encoder.write(0);
+  }
+  else if (mode == 1){
+    steps +=1;
+    encoder.write(0);
+    if(steps == 3){
+      bd.Year = birthYear;
+
+      bd.Month = birthMonth;
+      bd.Day = birthDay;
+      Serial.println(bd.Day);
+      
+      Serial.println(bd.Month);
+      
+      Serial.println(bd.Year);
+      birthDate = makeTime(bd);
+      Serial.println(birthDate);
+      switch(sex){
+        case 0:
+          deathDate = maleLifespan + birthDate;
+          break;
+        case 1: 
+          deathDate = femaleLifespan + birthDate;
+          break;
+        default:
+          deathDate = averageLifespan + birthDate;
+      }
+      Serial.println(deathDate);
+      
+      steps = 0;
+      mode = 2;
+    }
+  }
 }
 
 time_t getTeensy3Time()
