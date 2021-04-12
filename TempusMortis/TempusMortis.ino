@@ -34,6 +34,8 @@ OneButton redButton(REDBUTTON, false, false);
 OneButton blueButton(BLUEBUTTON, false, false);
 OneButton encoderButton(ENCODERBUTTON, false);
 
+
+
 //Encoder declarations
 const int PIN_A = 16;
 const int PIN_B = 15;
@@ -42,11 +44,17 @@ const int RED_LED = 7;
 Encoder encoder(PIN_A, PIN_B);
 int pos = 0;
 int oldPos = 0;
+int hueColor = 0;
+int hueSat = 0;
+int hueBright = 255;
 
 //Neopixel declarations
 const int PIXELPIN = 8;
 const int PIXELCOUNT = 1;
 const int PIXELBRIGHTNESS = 128;
+const int BLINKLENGTH = 20;
+long blinkRate = 0;
+bool blinking = false;
 Adafruit_NeoPixel pixel(PIXELCOUNT, PIXELPIN, NEO_GRB + NEO_KHZ800);
 
 
@@ -71,16 +79,19 @@ Adafruit_SSD1306 display(SCREEN_WIDTH, SCREEN_HEIGHT, &Wire, OLED_RESET);
 
 
 //Wemo declarations
-  //none
+Wemo wemo;
   
 //Hue declarations
 int hues[] = {1, 2, 3, 4, 5};
+int hueIncrement = 0;
+
 
 //Clock declarations
 long long currentdate = 0;
 
 //Control declarations
 int currentTime = 0;
+int blinkTime = 0;
 int oldTime = 0;
 int mode = 0;
 int steps = 0;
@@ -95,12 +106,14 @@ int birthMonth = 1;
 int birthDay = 1;
 tmElements_t bd;
 time_t birthDate;
-unsigned long deathDate = 0;
+long long deathDate = 0;
 long long remainingLife = 0;
 int value = 0;
 const long long maleLifespan = 2368353600; //75.1 years in seconds
 const long long femaleLifespan = 2538648000; //80.5 years in seconds
 const long long averageLifespan = 2453500800; //77.8 years in seconds
+long long myLifespan = 0;
+bool panicked = false;
 
 void setup() {
   //set up serial monitor
@@ -111,9 +124,11 @@ void setup() {
   redButton.attachClick(redClick);
   blueButton.attachClick(blueClick);
   encoderButton.attachClick(encoderClick);
+  //encoderButton.attachDoubleClick(encoderDouble);
   redButton.setClickTicks(500);
   blueButton.setClickTicks(500);
   encoderButton.setClickTicks(500);
+
 
   //set up encoder
     pinMode(RED_LED, OUTPUT);
@@ -358,35 +373,78 @@ void getSex(){
 
 void autoHorror(){
   remainingLife = deathDate - getTeensy3Time();
+
   display.clearDisplay();
   display.setCursor(0,0); 
-  display.printf("%i", remainingLife);
+  display.printf("Life left: %i\n", remainingLife);
+  display.printf("Saturation: %i\n", hueSat);
+  display.printf("Brightness: %i\n", hueBright);
   display.display();
   //blink neopixel
   deathBlink();
   //beep
   
   //show hue
-}
-
-void deathBlink(){
+  hueIncrement = myLifespan / 255;
+  hueSat = (255 - (remainingLife / hueIncrement)) ;
+  hueBright = remainingLife / hueIncrement;
+  Serial.println(hueSat);
+  Serial.println(hueBright);
+  for (int j = 0; j < 5; j++){
+    //setHue(hues[j],true,HueRed,hueBright,hueSat);
+    delay(10);
+  }
   
 }
 
+void deathBlink(){
+  blinkRate = remainingLife / 1000000;
+  currentTime = millis(); 
+  if(currentTime > blinkTime){
+    pixel.setPixelColor(0,255, 0, 0);
+    pixel.setBrightness(255);
+    pixel.show();
+    delay(20);
+    pixel.clear();
+    pixel.show();
+    blinkTime = currentTime + blinkRate;
+  }
+}
+
 void manualMode(){
+  hueSat = 0;
+  display.clearDisplay();
+  display.setCursor(0,0); 
+  display.printf("Saturation: %i\n", hueSat);
+  display.printf("Brightness: %i\n", hueBright);
+  display.display();
   //set lights to white
+  pos = encoder.read();
+  if(pos > 255){
+    pos = 255;
+    encoder.write(255);
+  }
+  if(pos < 0){
+    pos = 0;
+    encoder.write(0);
+  }
+  hueBright = pos;
+  for (int j = 0; j < 5; j++){
+    //setHue(hues[j],true,0,hueBright,0);
+    delay(10);
+  }
   //Encoder controls brightness
 }
 
 void panic(){
-  //start the tea
-  //calming lights
+
 }
 
 void redClick(){
   Serial.println("CLICKED RED!");
   if(mode == 2){
     mode = 3;
+    encoder.write(255);
   }
   else if(mode == 3){
     mode = 2;
@@ -394,12 +452,21 @@ void redClick(){
 }
 
 void blueClick(){
+    if(!panicked){
+   
+    wemo.switchON(3); 
+    panicked = true;
+  }
+  else{
+    wemo.switchOFF(3);
+    panicked = false;
+  }
   Serial.println("CLICKED BLUE!");
   if(mode == 2){
-    mode = 4;
+    mode = 3;
   }
   else if(mode == 3){
-    mode = 4;
+    mode = 3;
   }
   else if(mode == 4){
     mode = 2;
@@ -430,19 +497,26 @@ void encoderClick(){
       switch(sex){
         case 0:
           deathDate = maleLifespan + birthDate;
+          myLifespan = maleLifespan;
           break;
         case 1: 
           deathDate = femaleLifespan + birthDate;
+          myLifespan = femaleLifespan;
           break;
         default:
           deathDate = averageLifespan + birthDate;
+          myLifespan = averageLifespan;
       }
-      Serial.println(deathDate);
+      //Serial.println(deathDate);
       
       steps = 0;
       mode = 2;
     }
   }
+}
+
+void encoderDouble(){
+  mode = 0;
 }
 
 time_t getTeensy3Time()
